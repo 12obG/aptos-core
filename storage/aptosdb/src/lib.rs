@@ -57,7 +57,7 @@ use crate::{
         ledger_store::ledger_store_pruner::LedgerPruner, pruner_manager::PrunerManager,
         pruner_utils, state_kv_pruner::StateKvPruner,
         state_kv_pruner_manager::StateKvPrunerManager,
-        state_merkle_pruner_manager::StateMerklePrunerManager, state_store::StateMerklePruner,
+        state_merkle_pruner_manager::StateMerklePrunerManager,
     },
     schema::*,
     stale_node_index::StaleNodeIndexSchema,
@@ -2176,12 +2176,8 @@ impl DbWriter for AptosDB {
                 .pruner()
                 .save_min_readable_version(version, &batch)?;
 
-            let mut state_merkle_batch = SchemaBatch::new();
-            StateMerklePruner::prune_genesis(
-                self.state_merkle_db.clone(),
-                &mut state_merkle_batch,
-            )?;
-
+            // TODO(joshlind): Figure out a way to not write genesis.
+            let state_merkle_batch = SchemaBatch::new();
             self.state_store
                 .state_merkle_pruner
                 .pruner()
