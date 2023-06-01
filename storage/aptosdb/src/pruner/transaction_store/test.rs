@@ -50,12 +50,15 @@ fn verify_write_set_pruner(write_sets: Vec<WriteSet>) {
     let transaction_store = &aptos_db.transaction_store;
     let num_write_sets = write_sets.len();
 
-    let pruner = LedgerPrunerManager::new(Arc::clone(&aptos_db.ledger_db), LedgerPrunerConfig {
-        enable: true,
-        prune_window: 0,
-        batch_size: 1,
-        user_pruning_window_offset: 0,
-    });
+    let pruner = LedgerPrunerManager::new(
+        Arc::clone(&aptos_db.ledger_db),
+        LedgerPrunerConfig {
+            enable: true,
+            prune_window: 0,
+            batch_size: 1,
+            user_pruning_window_offset: 0,
+        },
+    );
 
     // write sets
     let batch = SchemaBatch::new();
@@ -122,13 +125,15 @@ fn verify_txn_store_pruner(
     for i in (0..=num_transaction).step_by(step_size) {
         // Initialize a pruner in every iteration to test the min_readable_version initialization
         // logic.
-        let pruner =
-            LedgerPrunerManager::new(Arc::clone(&aptos_db.ledger_db), LedgerPrunerConfig {
+        let pruner = LedgerPrunerManager::new(
+            Arc::clone(&aptos_db.ledger_db),
+            LedgerPrunerConfig {
                 enable: true,
                 prune_window: 0,
                 batch_size: 1,
                 user_pruning_window_offset: 0,
-            });
+            },
+        );
         pruner
             .wake_and_wait_pruner(i as u64 /* latest_version */)
             .unwrap();
@@ -250,13 +255,24 @@ fn put_txn_in_store(
         .write_schemas(transaction_batch)
         .unwrap();
     let transaction_info_batch = SchemaBatch::new();
+    let transaction_accumulator_batch = SchemaBatch::new();
     ledger_store
-        .put_transaction_infos(0, txn_infos, &transaction_info_batch)
+        .put_transaction_infos(
+            0,
+            txn_infos,
+            &transaction_info_batch,
+            &transaction_accumulator_batch,
+        )
         .unwrap();
     aptos_db
         .ledger_db
         .transaction_info_db()
         .write_schemas(transaction_info_batch)
+        .unwrap();
+    aptos_db
+        .ledger_db
+        .transaction_accumulator_db()
+        .write_schemas(transaction_accumulator_batch)
         .unwrap();
 }
 

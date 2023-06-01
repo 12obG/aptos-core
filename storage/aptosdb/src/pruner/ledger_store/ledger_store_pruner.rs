@@ -74,6 +74,9 @@ impl DBPruner for LedgerPruner {
     }
 
     fn initialize_min_readable_version(&self) -> anyhow::Result<Version> {
+        // Will rebase this PR after the pruner PR is merged.
+        Ok(0)
+        /*
         let stored_min_version = self
             .db
             .get::<DbMetadataSchema>(&DbMetadataKey::LedgerPrunerProgress)?
@@ -102,7 +105,7 @@ impl DBPruner for LedgerPruner {
             std::cmp::Ordering::Less => {
                 panic!("No transaction is found at or after stored ledger pruner progress ({}), db might be corrupted.", stored_min_version)
             },
-        }
+        }*/
     }
 
     fn min_readable_version(&self) -> Version {
