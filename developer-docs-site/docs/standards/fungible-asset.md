@@ -11,7 +11,7 @@ Fungible assets (FAs) are an essential part of the Aptos ecosystem, as they enab
 
 The [fungible asset module](https://github.com/aptos-labs/aptos-core/blob/main/aptos-move/framework/aptos-framework/sources/fungible_asset.move) provides a standard, type-safe framework for defining FAs within the Aptos Move ecosystem.
 
-The standard is built upon object model so all the resources defined here are included in object resource group and stored inside objects. There are two types of objects related to FA.
+The standard is built upon the object model so all the resources defined here are included in object resource group and stored inside objects. There are two types of objects related to FA.
 
 - `Object<Metadata>`: include information about the FA such as name, symbol and decimals.
 - `Object<FungibleStore>`: store a specific amount of FA units. FAs are units that are interchangeable with others of the same metadata. They can be stored in objects that contain a FungibleStore resource. These store objects can be freely created and FAs can be moved, split, combined between them easily.
