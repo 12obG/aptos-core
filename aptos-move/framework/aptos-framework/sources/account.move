@@ -19,6 +19,7 @@ module aptos_framework::account {
     friend aptos_framework::aptos_account;
     friend aptos_framework::coin;
     friend aptos_framework::genesis;
+    friend aptos_framework::multisig_account;
     friend aptos_framework::resource_account;
     friend aptos_framework::transaction_validation;
 
@@ -422,6 +423,21 @@ module aptos_framework::account {
 
         // update the existing rotation capability offer or put in a new rotation capability offer for the current account
         option::swap_or_fill(&mut account_resource.rotation_capability_offer.for, recipient_address);
+    }
+
+    #[view]
+    /// Returns true if the account at `account_addr` has a rotation capability offer.
+    public fun is_rotation_capability_offered(account_addr: address): bool acquires Account {
+        let account_resource = borrow_global<Account>(account_addr);
+        option::is_some(&account_resource.rotation_capability_offer.for)
+    }
+
+    #[view]
+    /// Returns the address of the account that has a rotation capability offer from the account at `account_addr`.
+    public fun get_rotation_capability_offer_for(account_addr: address): address acquires Account {
+        let account_resource = borrow_global<Account>(account_addr);
+        assert!(option::is_some(&account_resource.signer_capability_offer.for), error::not_found(ENO_SIGNER_CAPABILITY_OFFERED));
+        *option::borrow(&account_resource.rotation_capability_offer.for)
     }
 
     /// Revoke the rotation capability offer given to `to_be_revoked_recipient_address` from `account`
@@ -871,6 +887,18 @@ module aptos_framework::account {
     #[test_only]
     public fun create_test_signer_cap(account: address): SignerCapability {
         SignerCapability { account }
+    }
+
+    #[test_only]
+    public fun set_signer_capability_offer(offerer: address, receiver: address) acquires Account {
+        let account_resource = borrow_global_mut<Account>(offerer);
+        option::swap_or_fill(&mut account_resource.signer_capability_offer.for, receiver);
+    }
+
+    #[test_only]
+    public fun set_rotation_capability_offer(offerer: address, receiver: address) acquires Account {
+        let account_resource = borrow_global_mut<Account>(offerer);
+        option::swap_or_fill(&mut account_resource.rotation_capability_offer.for, receiver);
     }
 
     #[test]
