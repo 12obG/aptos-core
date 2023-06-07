@@ -31,6 +31,7 @@ import sys
 
 from cases.account import test_account_create, test_account_fund_with_faucet
 from cases.init import test_init, test_metrics_accessible
+from cases.move import test_move_publish
 from common import Network
 from local_testnet import run_node, stop_node, wait_for_startup
 from test_helpers import RunHelper
@@ -106,6 +107,9 @@ def run_tests(run_helper):
     test_account_fund_with_faucet(run_helper)
     test_account_create(run_helper)
 
+    # Run move subcommand group tests.
+    test_move_publish(run_helper)
+
 
 def main():
     args = parse_args()
@@ -116,13 +120,13 @@ def main():
     else:
         logging.getLogger().setLevel(logging.INFO)
 
+    # Create the directory the test CLI will run from.
+    shutil.rmtree(args.working_directory, ignore_errors=True)
+    pathlib.Path(args.working_directory).mkdir(parents=True, exist_ok=True)
+
     # Run a node + faucet and wait for them to start up.
     container_name = run_node(args.base_network, args.image_repo_with_project)
     wait_for_startup(container_name, args.base_startup_timeout)
-
-    # Create the dir the test CLI will run from.
-    shutil.rmtree(args.working_directory, ignore_errors=True)
-    pathlib.Path(args.working_directory).mkdir(parents=True, exist_ok=True)
 
     # Build the RunHelper object.
     run_helper = RunHelper(
@@ -130,6 +134,7 @@ def main():
         image_repo_with_project=args.image_repo_with_project,
         image_tag=args.test_cli_tag,
         cli_path=args.test_cli_path,
+        base_network=args.base_network,
     )
 
     # Prepare the run helper. This ensures in advance that everything needed is there.
