@@ -1704,7 +1704,9 @@ pub struct MultisigAccountWithSequenceNumber {
 pub struct TypeArgVec {
     /// TypeTag arguments separated by spaces.
     ///
-    /// Example: `u8 u16 u32 u64 u128 u256 bool address vector signer`
+    /// Supported types: `bool u8 u16 u32 u64 u128 u256 address string`
+    ///
+    /// Example: `--args u8:25 'address:["0x1", "0x2]' bool:[true, true, false] bool:true string:"Aptos"`
     #[clap(long, multiple_values = true)]
     pub(crate) type_args: Vec<MoveType>,
 }
