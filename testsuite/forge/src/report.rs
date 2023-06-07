@@ -5,6 +5,7 @@
 use aptos_transaction_emitter_lib::emitter::stats::TxnStats;
 use serde::Serialize;
 use std::fmt;
+use aptos_logger::info;
 
 #[derive(Default, Debug, Serialize)]
 pub struct TestReport {
@@ -37,6 +38,7 @@ impl TestReport {
             self.text.push('\n');
         }
         self.text.push_str(&text);
+        info!("{}", text);
     }
 
     pub fn report_txn_stats(&mut self, test_name: String, stats: &TxnStats) {

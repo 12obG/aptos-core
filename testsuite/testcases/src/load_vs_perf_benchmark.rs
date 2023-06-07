@@ -4,7 +4,7 @@
 use crate::NetworkLoadTest;
 use aptos_forge::{
     args::TransactionTypeArg, EmitJobMode, EmitJobRequest, NetworkContext, NetworkTest, Result,
-    Test, TxnStats,
+    Test, TxnStats, success_criteria::{SuccessCriteriaChecker, SuccessCriteria},
 };
 use aptos_logger::info;
 use rand::SeedableRng;
@@ -84,8 +84,9 @@ impl Display for TransactionWorkload {
 }
 
 pub struct LoadVsPerfBenchmark {
-    pub test: &'static dyn NetworkLoadTest,
+    pub test: Box<dyn NetworkLoadTest>,
     pub workloads: Workloads,
+    pub criteria: Vec<SuccessCriteria>,
 }
 
 impl Test for LoadVsPerfBenchmark {
@@ -140,6 +141,13 @@ impl LoadVsPerfBenchmark {
 
 impl NetworkTest for LoadVsPerfBenchmark {
     fn run<'t>(&self, ctx: &mut NetworkContext<'t>) -> Result<()> {
+        assert!(
+            self.criteria.is_empty() || self.criteria.len() == self.workloads.len(),
+            "Invalid config, {} criteria and {} workloads given",
+            self.criteria.len(),
+            self.workloads.len(),
+        );
+
         let _runtime = Runtime::new().unwrap();
         let individual_with_buffer = ctx
             .global_duration
@@ -167,38 +175,62 @@ impl NetworkTest for LoadVsPerfBenchmark {
             // let mut aptos_info = ctx.swarm().aptos_public_info();
             // runtime.block_on(aptos_info.reconfig());
 
-            println!(
-                "{: <30} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12}",
-                "workload",
-                "submitted/s",
-                "committed/s",
-                "expired/s",
-                "rejected/s",
-                "chain txn/s",
-                "latency",
-                "p50 lat",
-                "p90 lat",
-                "p99 lat",
-                "actual dur"
-            );
+            let table = to_table(&results);
+            for line in table {
+                info!("{}", line);
+            }
+        }
+
+        let table = to_table(&results);
+        for line in table {
+            ctx.report.report_text(line);
+        }
+        for index in 0..self.workloads.len() {
             for result in &results {
                 let rate = result.stats.rate();
-                println!(
-                    "{: <30} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12}",
-                    result.name,
-                    rate.submitted,
-                    rate.committed,
-                    rate.expired,
-                    rate.failed_submission,
-                    result.ledger_transactions / result.actual_duration.as_secs(),
-                    rate.latency,
-                    rate.p50_latency,
-                    rate.p90_latency,
-                    rate.p99_latency,
-                    result.actual_duration.as_secs()
-                )
+                if let Some(criteria) = self.criteria.get(index) {
+                    SuccessCriteriaChecker::check_core_for_success(criteria, ctx.report, &rate, Some(result.name.clone()))?;
+                }
             }
         }
         Ok(())
     }
+}
+
+fn to_table(results: &[SingleRunStats]) -> Vec<String> {
+    let mut table = Vec::new();
+    table.push(format!(
+        "{: <30} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12}",
+        "workload",
+        "submitted/s",
+        "committed/s",
+        "expired/s",
+        "rejected/s",
+        "chain txn/s",
+        "latency",
+        "p50 lat",
+        "p90 lat",
+        "p99 lat",
+        "actual dur"
+    ));
+
+    for result in results {
+        let rate = result.stats.rate();
+        table.push(format!(
+            "{: <30} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12} | {: <12}",
+            result.name,
+            rate.submitted,
+            rate.committed,
+            rate.expired,
+            rate.failed_submission,
+            result.ledger_transactions / result.actual_duration.as_secs(),
+            rate.latency,
+            rate.p50_latency,
+            rate.p90_latency,
+            rate.p99_latency,
+            result.actual_duration.as_secs()
+        ));
+    }
+
+    table
 }

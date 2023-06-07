@@ -228,8 +228,14 @@ fn main() -> Result<()> {
     logger.build();
 
     let args = Args::from_args();
-    let duration = Duration::from_secs(args.duration_secs as u64);
+    let duration = Duration::from_secs(5 * 300 as u64); // args.duration_secs as u64);
     let suite_name: &str = args.suite.as_ref();
+
+    let suite_name = if suite_name == "land_blocking" {
+        "realistic_env_load_sweep"
+    } else {
+        suite_name
+    };
 
     let runtime = Runtime::new()?;
     match args.cli_cmd {
@@ -263,7 +269,7 @@ fn main() -> Result<()> {
             match test_cmd {
                 TestCommand::LocalSwarm(local_cfg) => {
                     // Loosen all criteria for local runs
-                    test_suite.get_success_criteria_mut().avg_tps = 400;
+                    test_suite.get_success_criteria_mut().min_avg_tps = 400;
                     let previous_emit_job = test_suite.get_emit_job().clone();
                     let test_suite =
                         test_suite.with_emit_job(previous_emit_job.mode(EmitJobMode::MaxLoad {
@@ -492,6 +498,7 @@ fn single_test_suite(test_name: &str, duration: Duration) -> Result<ForgeConfig>
         "compat" => compat(),
         "framework_upgrade" => upgrade(),
         // Rest of the tests:
+        "realistic_env_load_sweep" => realistic_env_load_sweep_test(),
         "epoch_changer_performance" => epoch_changer_performance(),
         "state_sync_perf_fullnodes_apply_outputs" => state_sync_perf_fullnodes_apply_outputs(),
         "state_sync_perf_fullnodes_execute_transactions" => {
@@ -591,8 +598,9 @@ fn run_consensus_only_perf_test() -> ForgeConfig {
     config
         .with_initial_validator_count(NonZeroUsize::new(20).unwrap())
         .add_network_test(LoadVsPerfBenchmark {
-            test: &PerformanceBenchmark,
+            test: Box::new(PerformanceBenchmark),
             workloads: Workloads::TPS(&[30000]),
+            criteria: vec![],
         })
         .with_genesis_helm_config_fn(Arc::new(|helm_values| {
             // no epoch change.
@@ -757,15 +765,53 @@ fn consensus_stress_test() -> ForgeConfig {
     })
 }
 
+fn realistic_env_load_sweep_test() -> ForgeConfig {
+    ForgeConfig::default()
+        .with_initial_validator_count(NonZeroUsize::new(20).unwrap())
+        .with_initial_fullnode_count(10)
+        .add_network_test(CompositeNetworkTest::new_with_two_wrappers(
+            MultiRegionNetworkEmulationTest {
+                override_config: None,
+            },
+            CpuChaosTest {
+                override_config: None,
+            },
+            LoadVsPerfBenchmark {
+                test: Box::new(PerformanceBenchmark),
+                workloads: Workloads::TPS(&[10, 100, 1000, 3000, 5000]),
+                criteria: [(9, 2., 5.), (95, 2., 5.), (950, 5., 10.), (2900, 5., 20.), (5000, 5., 20.)].into_iter().map(
+                    |(min_tps, max_lat_p50, max_lat_p99)|
+                    SuccessCriteria::new(min_tps)
+                    .add_latency_threshold(max_lat_p50, LatencyType::P50)
+                    .add_latency_threshold(max_lat_p99, LatencyType::P99)
+                ).collect(),
+            },
+        ))
+        .with_genesis_helm_config_fn(Arc::new(|helm_values| {
+            // no epoch change.
+            helm_values["chain"]["epoch_duration_secs"] = (24 * 3600).into();
+        }))
+        .with_success_criteria(
+            SuccessCriteria::new(0)
+                .add_no_restarts()
+                .add_wait_for_catchup_s(60)
+                .add_chain_progress(StateProgressThreshold {
+                    max_no_progress_secs: 30.0,
+                    max_round_gap: 10,
+                }),
+        )
+}
+
 fn load_vs_perf_benchmark() -> ForgeConfig {
     ForgeConfig::default()
         .with_initial_validator_count(NonZeroUsize::new(20).unwrap())
         .with_initial_fullnode_count(10)
         .add_network_test(LoadVsPerfBenchmark {
-            test: &PerformanceBenchmark,
+            test: Box::new(PerformanceBenchmark),
             workloads: Workloads::TPS(&[
                 200, 1000, 3000, 5000, 7000, 7500, 8000, 9000, 10000, 12000, 15000,
             ]),
+            criteria: Vec::new(),
         })
         .with_genesis_helm_config_fn(Arc::new(|helm_values| {
             // no epoch change.
@@ -794,7 +840,7 @@ fn workload_vs_perf_benchmark() -> ForgeConfig {
         //     mempool_backlog: 10000,
         // }))
         .add_network_test(LoadVsPerfBenchmark {
-            test: &PerformanceBenchmark,
+            test: Box::new(PerformanceBenchmark),
             workloads: Workloads::TRANSACTIONS(&[
                 TransactionWorkload {
                     transaction_type: TransactionTypeArg::NoOp,
@@ -837,6 +883,7 @@ fn workload_vs_perf_benchmark() -> ForgeConfig {
                     unique_senders: true,
                 },
             ]),
+            criteria: Vec::new(),
         })
         .with_genesis_helm_config_fn(Arc::new(|helm_values| {
             // no epoch change.
@@ -863,15 +910,14 @@ fn graceful_overload() -> ForgeConfig {
         // So having VFNs for all validators
         .with_initial_fullnode_count(10)
         .add_network_test(TwoTrafficsTest {
-            inner_mode: EmitJobMode::ConstTps { tps: 15000 },
-            inner_gas_price: aptos_global_constants::GAS_UNIT_PRICE,
-            inner_init_gas_price_multiplier: 20,
-            inner_transaction_type: TransactionTypeArg::CoinTransfer.materialize_default(),
+            inner_traffic: EmitJobRequest::default()
+                .mode(EmitJobMode::ConstTps { tps: 15000 })
+                .init_gas_price_multiplier(20),
+
             // Additionally - we are not really gracefully handling overlaods,
             // setting limits based on current reality, to make sure they
             // don't regress, but something to investigate
-            avg_tps: 3400,
-            latency_thresholds: &[],
+            inner_success_criteria: SuccessCriteria::new(3400),
         })
         // First start higher gas-fee traffic, to not cause issues with TxnEmitter setup - account creation
         .with_emit_job(
@@ -913,19 +959,13 @@ fn three_region_sim_graceful_overload() -> ForgeConfig {
         .add_network_test(CompositeNetworkTest::new(
             ThreeRegionSameCloudSimulationTest,
             TwoTrafficsTest {
-                inner_mode: EmitJobMode::ConstTps { tps: 15000 },
-                inner_gas_price: aptos_global_constants::GAS_UNIT_PRICE,
-                inner_init_gas_price_multiplier: 20,
-                // Cannot use TransactionTypeArg::materialize, as this needs to be static
-                inner_transaction_type: TransactionType::CoinTransfer {
-                    invalid_transaction_ratio: 0,
-                    sender_use_account_pool: false,
-                },
+                inner_traffic: EmitJobRequest::default()
+                    .mode(EmitJobMode::ConstTps { tps: 15000 })
+                    .init_gas_price_multiplier(20),
                 // Additionally - we are not really gracefully handling overlaods,
                 // setting limits based on current reality, to make sure they
                 // don't regress, but something to investigate
-                avg_tps: 1200,
-                latency_thresholds: &[],
+                inner_success_criteria: SuccessCriteria::new(3400),
             },
         ))
         // First start higher gas-fee traffic, to not cause issues with TxnEmitter setup - account creation
@@ -1333,14 +1373,12 @@ fn realistic_env_max_throughput_test_suite(duration: Duration) -> ForgeConfig {
                 override_config: None,
             },
             TwoTrafficsTest {
-                inner_mode: EmitJobMode::MaxLoad {
-                    mempool_backlog: 40000,
-                },
-                inner_gas_price: aptos_global_constants::GAS_UNIT_PRICE,
-                inner_init_gas_price_multiplier: 20,
-                inner_transaction_type: TransactionTypeArg::CoinTransfer.materialize_default(),
-                avg_tps: 5000,
-                latency_thresholds: &[],
+                inner_traffic: EmitJobRequest::default()
+                    .mode(EmitJobMode::MaxLoad {
+                        mempool_backlog: 40000,
+                    })
+                    .init_gas_price_multiplier(20),
+                inner_success_criteria: SuccessCriteria::new(5000),
             },
         ))
         .with_genesis_helm_config_fn(Arc::new(|helm_values| {
