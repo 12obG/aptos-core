@@ -15,6 +15,9 @@ module std::vector {
     /// The index into the vector is out of bounds
     const EINVALID_RANGE: u64 = 0x20001;
 
+    /// The length of the vectors are not equal.
+    const EVECTORS_LENGTH_MISMATCH: u64 = 0x20002;
+
     #[bytecode_instruction]
     /// Create an empty vector.
     native public fun empty<Element>(): vector<Element>;
@@ -263,6 +266,51 @@ module std::vector {
         }
     }
 
+    /// Apply the function to each pair of elements in the two given vectors, consuming them.
+    public inline fun zip<Element1, Element2>(v1: vector<Element1>, v2: vector<Element2>, f: |Element1, Element2|) {
+        // We need to reverse the vectors to consume it efficiently
+        reverse(&mut v1);
+        reverse(&mut v2);
+        zip_reverse(v1, v2, |e1, e2| f(e1, e2));
+    }
+
+    /// Apply the function to each pair of elements in the two given vectors in the reverse order, consuming them.
+    /// This errors out if the vectors are not of the same length.
+    public inline fun zip_reverse<Element1, Element2>(
+        v1: vector<Element1>,
+        v2: vector<Element2>,
+        f: |Element1, Element2|,
+    ) {
+        let len = length(&v1);
+        // We can't use the constant EVECTORS_LENGTH_MISMATCH here as all calling code would then need to define it
+        // due to how inline functions work.
+        assert!(len == length(&v2), 0x20002);
+        while (len > 0) {
+            f(pop_back(&mut v1), pop_back(&mut v2));
+            len = len - 1;
+        };
+        destroy_empty(v1);
+        destroy_empty(v2);
+    }
+
+    /// Apply the function to the references of each pair of elements in the two given vectors.
+    /// This errors out if the vectors are not of the same length.
+    public inline fun zip_ref<Element1, Element2>(
+        v1: &vector<Element1>,
+        v2: &vector<Element2>,
+        f: |&Element1, &Element2|,
+    ) {
+        let len = length(v1);
+        // We can't use the constant EVECTORS_LENGTH_MISMATCH here as all calling code would then need to define it
+        // due to how inline functions work.
+        assert!(len == length(v2), 0x20002);
+        let i = 0;
+        while (i < len) {
+            f(borrow(v1, i), borrow(v2, i));
+            i = i + 1
+        }
+    }
+
     /// Apply the function to a reference of each element in the vector with its index.
     public inline fun enumerate_ref<Element>(v: &vector<Element>, f: |u64, &Element|) {
         let i = 0;
@@ -279,6 +327,24 @@ module std::vector {
         let len = length(v);
         while (i < len) {
             f(borrow_mut(v, i));
+            i = i + 1
+        }
+    }
+
+    /// Apply the function to mutable references to each pair of elements in the two given vectors.
+    /// This errors out if the vectors are not of the same length.
+    public inline fun zip_mut<Element1, Element2>(
+        v1: &mut vector<Element1>,
+        v2: &mut vector<Element2>,
+        f: |&mut Element1, &mut Element2|,
+    ) {
+        let i = 0;
+        let len = length(v1);
+        // We can't use the constant EVECTORS_LENGTH_MISMATCH here as all calling code would then need to define it
+        // due to how inline functions work.
+        assert!(len == length(v2), 0x20002);
+        while (i < len) {
+            f(borrow_mut(v1, i), borrow_mut(v2, i));
             i = i + 1
         }
     }
